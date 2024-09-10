@@ -1,4 +1,4 @@
-*.c linguist-language=rust
-*.cc linguist-language=rust
-*.cpp linguist-language=rust
+*.c linguist-language=rust;
+*.cc linguist-language=rust;
+*.cpp linguist-language=rust;
 *.h linguist-language=rust
