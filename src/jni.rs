@@ -338,7 +338,7 @@ impl<T: Clone> Jni<T> for QSecJni<'_, T> {
                             DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.sign.QQSecuritySign:getSign")))).into(),
                             DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.sign.QQSecuritySign:getSign")))).into(),
                             DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.fe.FEKit:getSign")))).into(),
-                            DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.msf.core.d0.a:a")))).into(),
+                            DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.msf.core.d0.a:c")))).into(),
                             DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.msf.core.r:a")))).into(),
                             DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.msf.core.r:b")))).into(),
                             DvmObject::DataMutInstance(class.clone(), Rc::new(UnsafeCell::new(Box::new("com.tencent.mobileqq.msf.core.r:d")))).into(),
