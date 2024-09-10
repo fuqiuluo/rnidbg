@@ -1,0 +1,52 @@
+[package]
+name = "rnidbg"
+authors = ["fuqiuluo"]
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# The default feature set includes the Dynarmic backend.
+default = ["dynarmic"]
+# The `unicorn` feature set includes the Unicorn backend.
+unicorn = ["emulator/unicorn_backend"]
+# The `dynarmic` feature set includes the Dynarmic backend.
+dynarmic = ["emulator/dynarmic_backend"]
+
+[dependencies]
+emulator = { path = "emulator", version = "0.1.0", features = [] }
+anyhow = "1.0.86"
+keystone-engine = { version = "0.1.0", features = ["build-from-src"] }
+hex = { version = "0.4.3", features = ["default"] }
+bytes = "1.6.0"
+log = "0.4.22"
+env_logger = "0.11.3"
+byteorder = "1.5.0"
+hashbag = "0.1.12"
+bitflags = "2.6.0"
+indexmap = "2.3.0"
+rand = "0.9.0-alpha.2"
+generic-array = "1.1.0"
+once_cell = "1.19.0"
+
+[build-dependencies]
+prost-build = "0.13.1"
+walkdir = "2.3"
+rustls = { version = "0.23.12", default-features = false, features = ["std", "tls12", "ring"] }
+# forbidden to use the default features: OpenSSL
+reqwest = { version = "0.12.7", features = ["blocking", "rustls-tls"], default-features = false }
+zip = "2.2.0"
+
+[profile.release]
+debug = false
+lto = true
+panic = 'abort'
+opt-level = 3
+strip = true
+overflow-checks = false
+codegen-units = 1
+
+[profile.test]
+overflow-checks = false
+
+[profile.dev]
+
