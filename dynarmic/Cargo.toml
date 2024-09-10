@@ -1,0 +1,24 @@
+[package]
+name = "dynarmic"
+version = "0.1.0"
+edition = "2021"
+build = "binding/build.rs"
+links = "dynarmic"
+
+[lib]
+path = "binding/src/lib.rs"
+
+[dependencies]
+bitflags = "2.3.3"
+libc = "0.2"
+bytes = { version = "1.7.0", features = [] }
+ansi_term = "0.12.1"
+hex = "0.4.3"
+anyhow = "1.0.86"
+log = "0.4.22"
+
+[build-dependencies]
+cc = { version = "1.1.10", features = ["parallel"] }
+cmake = { version = "0.1.50" }
+pkg-config = { version = "0.3" }
+bytes = { version = "1.7.0", features = [] }
