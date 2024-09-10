@@ -239,17 +239,11 @@ fn init_filesystem<T: Clone>(base_path: String, emulator: &AndroidEmulator<T>) {
             }
         }
 
-        if path == "/system/lib/libhoudini.so" || path == "/system/lib64/libhoudini.so" {
-            return None
-        }
 
         if path == "/sdcard/Android/" {
             return Some(FileIO::Direction(Direction::new(VecDeque::new(), path)))
         }
 
-        if path == "/proc/self/maps" {
-            return None
-        }
 
         if path == "/data/app/~~vbcRLwPxS0GyVfqT-nCYrQ==/com.tencent.mobileqq-xJKJPVp9lorkCgR_w5zhyA==/base.apk" {
             return Some(FileIO::File(LinuxFileIO::new(
@@ -265,15 +259,6 @@ fn init_filesystem<T: Clone>(base_path: String, emulator: &AndroidEmulator<T>) {
             return Some(FileIO::Bytes(ByteArrayFileIO::new(b"com.tencent.mobileqq:MSF\0".to_vec(), path.to_string(), 12345, flags.bits(), StMode::APP_FILE)))
         }
 
-        if path == "/data/app/~~vbcRLwPxS0GyVfqT-nCYrQ==/com.tencent.mobileqq-xJKJPVp9lorkCgR_w5zhyA==/lib/arm64" {
-            let mut files = VecDeque::new();
-            files.push_back(DirectionEntry::new(true, "libfekit.so"));
-            files.push_back(DirectionEntry::new(true, "libwtecdh.so"));
-            files.push_back(DirectionEntry::new(true, "libmmkv.so"));
-            files.push_back(DirectionEntry::new(true, "libQSec.so"));
-            files.push_back(DirectionEntry::new(true, "libqimei.so"));
-            return Some(FileIO::Direction(Direction::new(files, path)))
-        }
 
         if path == "/data/app/~~vbcRLwPxS0GyVfqT-nCYrQ==/com.tencent.mobileqq-xJKJPVp9lorkCgR_w5zhyA==/lib/arm64/libfekit.so" {
             return Some(FileIO::File(LinuxFileIO::new(
@@ -285,35 +270,7 @@ fn init_filesystem<T: Clone>(base_path: String, emulator: &AndroidEmulator<T>) {
             )))
         }
 
-        if path == "/data/user/999" {
-            return None
-        }
 
-        if path == "/data//misc/zoneinfo/current/tzdata" {
-            return None
-        }
-
-        if path == "/system//usr/share/zoneinfo/tzdata" {
-            return None
-        }
-
-        if path == "/data/local/su"
-            || path == "/data/local/bin/su"
-            || path == "/data/local/xbin/su"
-            || path == "/sbin/su"
-            || path == "/su/bin/su"
-            || path == "/system/bin/su"
-            || path == "/system/bin/.ext/su"
-            || path == "/system/bin/failsafe/su"
-            || path == "/system/sd/xbin/su"
-            || path == "/system/usr/we-need-root/su"
-            || path == "/system/xbin/su"
-            || path == "/cache/su"
-            || path == "/data/su"
-            || path == "/dev/su"
-        {
-            return None
-        }
 
         if path == "/data/data/com.tencent.mobileqq" {
             let mut deque = VecDeque::new();
@@ -324,33 +281,6 @@ fn init_filesystem<T: Clone>(base_path: String, emulator: &AndroidEmulator<T>) {
             return Some(FileIO::Direction(Direction::new(deque, path)))
         }
 
-        if path == "/system/bin/sh" {
-            return Some(FileIO::File(LinuxFileIO::new(
-                &format!("{}/system/bin/sh", system_base_path),
-                path,
-                flags.bits(),
-                12345,
-                StMode::APP_FILE
-            )))
-        }
-        if path == "/system/lib/libc.so" {
-            return Some(FileIO::File(LinuxFileIO::new(
-                &format!("{}/system/lib64/libc.so", system_base_path),
-                path,
-                flags.bits(),
-                12345,
-                StMode::APP_FILE
-            )))
-        }
-        if path == "/system/bin/ls" {
-            return Some(FileIO::File(LinuxFileIO::new(
-                &format!("{}/system/bin/ls", system_base_path),
-                path,
-                flags.bits(),
-                12345,
-                StMode::APP_FILE
-            )))
-        }
 
         if path == "/proc" {
             let mut deque = VecDeque::new();
