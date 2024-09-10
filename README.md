@@ -5,7 +5,7 @@ An ARM64 emulator written in Rust, based on the secondary development of unidbg.
 ## Build Me
 
 - Make sure your Rust version is 1.79+, otherwise upgrade!
-- If Linux, make sure that `libfmt` is available in your environment (**dynarmic backend**).
+- If Linux, make sure that `libfmt`/`boost` is available in your environment (**dynarmic backend**).
 
 ## DEVELOPER DEBUGGING COMPILE TIME VARIABLES
 
