@@ -1,21 +1,21 @@
-use std::{mem, ptr};
-use bitflags::bitflags;
 use crate::android::dvm::DalvikVM64;
 use crate::backend::Backend;
+use bitflags::bitflags;
+use std::{mem, ptr};
 
 #[repr(C)]
 #[derive(Default)]
 pub struct Stat64 {
     pub st_dev: i64,
     pub st_ino: i64,
-    pub st_mode: u32,//
-    pub st_nlink: i32,//
-    pub st_uid: i32,//
-    pub st_gid: i32,//
+    pub st_mode: u32,  //
+    pub st_nlink: i32, //
+    pub st_uid: i32,   //
+    pub st_gid: i32,   //
     pub st_rdev: i64,
     pub __pad1: i64,
     pub st_size: usize,
-    pub st_blksize: i32,//
+    pub st_blksize: i32, //
     pub __pad2: i32,
     pub st_blocks: i64,
 
@@ -24,7 +24,7 @@ pub struct Stat64 {
     pub st_ctime: Timespec,
 
     pub __unused4: u32,
-    pub __unused5: u32
+    pub __unused5: u32,
 }
 
 #[repr(C)]
@@ -41,7 +41,7 @@ pub struct Dirent {
     pub d_off: i64,
     pub d_reclen: u16,
     pub d_type: u8,
-    pub d_name: [u8; 256]
+    pub d_name: [u8; 256],
 }
 
 bitflags!(
@@ -104,14 +104,14 @@ bitflags! {
 #[derive(Clone)]
 pub struct Timeval {
     pub tv_sec: i64,
-    pub tv_usec: i64
+    pub tv_usec: i64,
 }
 
 #[repr(C)]
 #[derive(Clone)]
 pub struct Timezone {
     pub tz_minuteswest: i32,
-    pub tz_dsttime: i32
+    pub tz_dsttime: i32,
 }
 
 #[repr(C)]
@@ -120,7 +120,7 @@ pub struct DlInfo {
     pub dli_fname: u64,
     pub dli_fbase: u64,
     pub dli_sname: u64,
-    pub dli_saddr: u64
+    pub dli_saddr: u64,
 }
 
 #[repr(C)]
@@ -128,13 +128,10 @@ pub struct DlInfo {
 pub struct PropInfo {
     pub name: [u8; 32],
     pub serial: u32,
-    pub value: [u8; 92]
+    pub value: [u8; 92],
 }
 
-pub mod thread {
-
-
-}
+pub mod thread {}
 
 pub mod socket {
     use bitflags::bitflags;
@@ -188,7 +185,7 @@ pub mod socket {
         SMC = 43,
         XDP = 44,
         MCTP = 45,
-        MAX = 46
+        MAX = 46,
     }
 
     impl Pf {
@@ -241,7 +238,7 @@ pub mod socket {
                 44 => Pf::XDP,
                 45 => Pf::MCTP,
                 46 => Pf::MAX,
-                _ => Pf::UNSPEC
+                _ => Pf::UNSPEC,
             }
         }
     }
@@ -284,7 +281,7 @@ pub struct CVaList<'a, T: Clone> {
     pub vr_top: u64,
     pub gr_offs: i32,
     pub vr_offs: i32,
-    pub(crate) backend: Backend<'a, T>
+    pub(crate) backend: Backend<'a, T>,
 }
 
 impl<T: Clone> CVaList<'_, T> {
@@ -311,25 +308,25 @@ impl<T: Clone> CVaList<'_, T> {
 
 impl<D: Clone> CVaList<'_, D> {
     pub fn get<T: VaPrimitive<D>>(&mut self, dvm: &DalvikVM64<D>) -> T {
-        unsafe { T::get(self, dvm) }
+        T::get(self, dvm)
     }
 }
 
 pub trait VaPrimitive<T: Clone>: 'static {
     #[doc(hidden)]
-    unsafe fn get(_: &mut CVaList<T>, dvm: &DalvikVM64<T>) -> Self;
+    fn get(_: &mut CVaList<T>, dvm: &DalvikVM64<T>) -> Self;
 }
 
 macro_rules! impl_va_prim_gr {
     ($u: ty, $s: ty) => {
         impl<T: Clone> VaPrimitive<T> for $u {
-            unsafe fn get(list: &mut CVaList<T>, dvm: &DalvikVM64<T>) -> Self {
-                list.get_gr()
+            fn get(list: &mut CVaList<T>, _: &DalvikVM64<T>) -> Self {
+                unsafe { list.get_gr() }
             }
         }
         impl<T: Clone> VaPrimitive<T> for $s {
-            unsafe fn get(list: &mut CVaList<T>, dvm: &DalvikVM64<T>) -> Self {
-                mem::transmute(<$u>::get(list, dvm))
+            fn get(list: &mut CVaList<T>, dvm: &DalvikVM64<T>) -> Self {
+                unsafe { mem::transmute(<$u>::get(list, dvm)) }
             }
         }
     };
@@ -339,15 +336,15 @@ macro_rules! impl_va_prim_vr {
     ($($t:ty),+) => {
         $(
             impl<T: Clone> VaPrimitive<T> for $t {
-                unsafe fn get(list: &mut CVaList<T>, dvm: &DalvikVM64<T>) -> Self {
-                    list.get_vr()
+                fn get(list: &mut CVaList<T>, _: &DalvikVM64<T>) -> Self {
+                    unsafe { list.get_vr() }
                 }
             }
         )+
     };
 }
 
-impl_va_prim_gr!{ usize, isize }
-impl_va_prim_gr!{ u64, i64 }
-impl_va_prim_gr!{ u32, i32 }
-impl_va_prim_vr!{ f64, f32 }
+impl_va_prim_gr! { usize, isize }
+impl_va_prim_gr! { u64, i64 }
+impl_va_prim_gr! { u32, i32 }
+impl_va_prim_vr! { f64, f32 }

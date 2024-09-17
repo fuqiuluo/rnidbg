@@ -1,11 +1,3 @@
-use std::cell::{RefCell, UnsafeCell};
-use std::collections::{HashMap, VecDeque};
-use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32};
-use anyhow::anyhow;
-use indexmap::IndexMap;
-use log::{error, info};
 use crate::backend::Backend;
 use crate::elf::dynamic_struct::ElfDynamicStructure;
 use crate::elf::memorized_object::MemoizedObject;
@@ -16,11 +8,18 @@ use crate::elf::symbol::ElfSymbol;
 use crate::elf::symbol_structure::SymbolLocator;
 use crate::emulator::{AndroidEmulator, RcUnsafeCell, VMPointer};
 use crate::linux::init_fun::{InitFunction, InitFunctionTrait};
-use crate::linux::PAGE_ALIGN;
 use crate::linux::symbol::{LinuxSymbol, ModuleSymbol};
-use crate::memory::library_file::LibraryFile;
+use crate::linux::PAGE_ALIGN;
 use crate::memory::ModuleMemRegion;
 use crate::tool::align_addr;
+use anyhow::anyhow;
+use indexmap::IndexMap;
+use log::info;
+use std::cell::UnsafeCell;
+use std::collections::{HashMap, VecDeque};
+use std::rc::Rc;
+use std::sync::atomic::AtomicU32;
+use std::sync::Arc;
 
 pub struct LinuxModule<'a, T: Clone> {
     pub name: String,
@@ -96,26 +95,45 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
         if let Some(dynsym) = self.dynsym.as_ref() {
             let so_addr = addr.overflowing_sub(self.base);
             if so_addr.1 {
-                return Err(anyhow!("Failed to find symbol by closest addr: 0x{:X}", addr))
+                return Err(anyhow!(
+                    "Failed to find symbol by closest addr: 0x{:X}",
+                    addr
+                ));
             }
             let elf_symbol = match dynsym {
                 SymbolLocator::Section(sc) => sc.get_elf_symbol_by_addr(so_addr.0),
-                SymbolLocator::SymbolStructure(ss) => ss.get_elf_symbol_by_addr(so_addr.0)
+                SymbolLocator::SymbolStructure(ss) => ss.get_elf_symbol_by_addr(so_addr.0),
             };
             let elf_file = unsafe { &*self.elf_file.as_ref().unwrap().get() };
             let mut symbol = if let Ok(elf_symbol) = elf_symbol {
-                LinuxSymbol::new(elf_symbol.name(elf_file)?, elf_symbol, self.base, self.name.clone()).into()
-            } else { None };
+                LinuxSymbol::new(
+                    elf_symbol.name(elf_file)?,
+                    elf_symbol,
+                    self.base,
+                    self.name.clone(),
+                )
+                .into()
+            } else {
+                None
+            };
             let entry = self.base + self.entry_point;
             if addr >= entry && symbol.is_some() && entry > symbol.as_ref().unwrap().address() {
-                symbol = Some(LinuxSymbol::new("start".to_string(), symbol.unwrap().symbol, self.base, self.name.clone()));
+                symbol = Some(LinuxSymbol::new(
+                    "start".to_string(),
+                    symbol.unwrap().symbol,
+                    self.base,
+                    self.name.clone(),
+                ));
             }
 
             if let Some(symbol) = symbol {
                 return Ok(symbol);
             }
         }
-        Err(anyhow!("Failed to find symbol by closest addr: 0x{:X}", addr))
+        Err(anyhow!(
+            "Failed to find symbol by closest addr: 0x{:X}",
+            addr
+        ))
     }
 
     pub fn find_symbol_by_name(&self, name: &str, with_dep: bool) -> anyhow::Result<LinuxSymbol> {
@@ -123,14 +141,14 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
             let elf_file = unsafe { &*self.elf_file.as_ref().unwrap().get() };
             let elf_symbol = match dynsym {
                 SymbolLocator::Section(sec) => sec.get_elf_symbol_by_name(name, elf_file),
-                SymbolLocator::SymbolStructure(ss) => ss.get_elf_symbol_by_name(name, elf_file)
+                SymbolLocator::SymbolStructure(ss) => ss.get_elf_symbol_by_name(name, elf_file),
             };
             if let Ok(elf_symbol) = elf_symbol {
                 return Ok(LinuxSymbol::new(
                     name.to_string(),
                     elf_symbol,
                     self.base,
-                    self.name.clone()
+                    self.name.clone(),
                 ));
             }
 
@@ -147,11 +165,15 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
         Err(anyhow!("Failed to find symbol by name: {}", name))
     }
 
-    pub fn get_elf_symbol_by_name(&self, name: &str, elf_file: &ElfFile) -> anyhow::Result<ElfSymbol> {
+    pub fn get_elf_symbol_by_name(
+        &self,
+        name: &str,
+        elf_file: &ElfFile,
+    ) -> anyhow::Result<ElfSymbol> {
         if let Some(dynsym) = &self.dynsym {
             let symbol = match dynsym {
                 SymbolLocator::Section(sec) => sec.get_elf_symbol_by_name(name, elf_file),
-                SymbolLocator::SymbolStructure(ss) => ss.get_elf_symbol_by_name(name, elf_file)
+                SymbolLocator::SymbolStructure(ss) => ss.get_elf_symbol_by_name(name, elf_file),
             };
             return symbol;
         }
@@ -159,16 +181,11 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
         Err(anyhow!("dynsym is none"))
     }
 
-    pub fn create_virtual_module(
-        name: String,
-        symbol: HashMap<String, u64>
-    ) -> Self {
+    pub fn create_virtual_module(name: String, symbol: HashMap<String, u64>) -> Self {
         if symbol.is_empty() {
             panic!("symbol is empty!")
         }
-        let mut list = symbol.iter()
-            .map(|(k, v)| v.clone())
-            .collect::<Vec<_>>();
+        let mut list = symbol.iter().map(|(k, v)| v.clone()).collect::<Vec<_>>();
         list.sort();
 
         let first = list.first().unwrap().clone();
@@ -178,7 +195,10 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
         let base = alignment.address;
         let size = alignment.size;
 
-        info!("createVirtualModule first=0x{:X} , last=0x{:X}, base=0x{:X}, size=0x{:X}", first, last, base, size);
+        info!(
+            "createVirtualModule first=0x{:X} , last=0x{:X}, base=0x{:X}, size=0x{:X}",
+            first, last, base, size
+        );
 
         let module = LinuxModule::new(
             base,
@@ -202,32 +222,38 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
 
     pub fn path(&self, emulator: &AndroidEmulator<T>) -> String {
         if self.name == "liblog.so" {
-            return "/system/lib64/liblog.so".to_string()
+            return "/system/lib64/liblog.so".to_string();
         } else if self.name == "libc++.so" {
-            return "/system/lib64/libc++.so".to_string()
+            return "/system/lib64/libc++.so".to_string();
         } else if self.name == "libc.so" {
-            return "/system/lib64/libc.so".to_string()
+            return "/system/lib64/libc.so".to_string();
         } else if self.name == "libm.so" {
-            return "/system/lib64/libm.so".to_string()
+            return "/system/lib64/libm.so".to_string();
         } else if self.name == "libdl.so" {
-            return "/system/lib64/libdl.so".to_string()
+            return "/system/lib64/libdl.so".to_string();
         } else if self.name == "libstdc++.so" {
-            return "/system/lib64/libstdc++.so".to_string()
+            return "/system/lib64/libstdc++.so".to_string();
         } else if self.name == "libz.so" {
-            return "/system/lib64/libz.so".to_string()
+            return "/system/lib64/libz.so".to_string();
         } else if self.name == "libandroid.so" {
-            return "/system/lib64/libandroid.so".to_string()
+            return "/system/lib64/libandroid.so".to_string();
         }
-        let package_name = emulator.inner_mut().proc_name
+        let package_name = emulator
+            .inner_mut()
+            .proc_name
             .split(":")
             .next()
             .unwrap_or("");
-        format!("/data/app/~~YuanShenZhenChaoHaoWan/{}-0/lib/arm64/{}", package_name, self.name)
+        format!(
+            "/data/app/~~YuanShenZhenChaoHaoWan/{}-0/lib/arm64/{}",
+            package_name, self.name
+        )
     }
 
     pub fn unload(&self, unicorn: &Backend<T>) -> anyhow::Result<()> {
         for region in &self.regions {
-            unicorn.mem_unmap(region.begin, (region.end - region.begin) as usize)
+            unicorn
+                .mem_unmap(region.begin, (region.end - region.begin) as usize)
                 .map_err(|e| anyhow!("LinuxModule unload, but failed to mem_unmap: {:?}", e))?;
         }
         Ok(())
@@ -235,9 +261,13 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
 }
 
 impl<'a, T: Clone> LinuxModule<'a, T> {
-    pub(crate) fn call_init_functions(&mut self, must_call_init: bool, emulator: &AndroidEmulator<'a, T>) -> anyhow::Result<()> {
+    pub(crate) fn call_init_functions(
+        &mut self,
+        must_call_init: bool,
+        emulator: &AndroidEmulator<'a, T>,
+    ) -> anyhow::Result<()> {
         if !must_call_init && !self.unresolved_symbol.is_empty() {
-            return Ok(())
+            return Ok(());
         }
 
         //let mut called_functions = vec![];
@@ -281,7 +311,13 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
                             let start_time = std::time::Instant::now();
                             let address = linux.addr;
 
-                            println!("[{}] CallInitFunctionStart base=0x{:X}, offset=0x{:X}, start={:?}", self.name, linux.load_base, address - linux.load_base, start_time);
+                            println!(
+                                "[{}] CallInitFunctionStart base=0x{:X}, offset=0x{:X}, start={:?}",
+                                self.name,
+                                linux.load_base,
+                                address - linux.load_base,
+                                start_time
+                            );
 
                             /*if called_functions.contains(&address) {
                                 error!("[{}] ALREADY CallInitFunction: base=0x{:X}, offset=0x{:X}, start={:?}", self.name, linux.load_base, address - linux.load_base, start_time);
@@ -299,7 +335,7 @@ impl<'a, T: Clone> LinuxModule<'a, T> {
                     }
                 }
             } else {
-                break
+                break;
             }
         }
 

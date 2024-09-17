@@ -1,19 +1,18 @@
-use std::fmt::{Display, Formatter};
-use std::rc::Rc;
-use bitflags::bitflags;
 use crate::android::dvm::class::DvmClass;
-use crate::android::dvm::DalvikVM64;
 use crate::android::dvm::member::{DvmField, DvmMethod};
 use crate::android::dvm::object::DvmObject;
+use crate::android::dvm::DalvikVM64;
 use crate::emulator::{AndroidEmulator, VMPointer};
 pub use crate::linux::structs::CVaList as VaList;
 use crate::linux::structs::VaPrimitive;
+use bitflags::bitflags;
+use std::rc::Rc;
 
 /// If you think the beginning of the address `0x7001_0000_0000` may be a detection feature?
 /// Please change it to another value, but please do not change it too large,
 /// because most of the addresses in this project start from `0x7200_0000_0000`
-pub const JNI_FLAG_CLASS: i64 =  0x7001;
-pub const JNI_FLAG_REF: i64 =    0x7002;
+pub const JNI_FLAG_CLASS: i64 = 0x7001;
+pub const JNI_FLAG_REF: i64 = 0x7002;
 pub const JNI_FLAG_OBJECT: i64 = 0x7003;
 
 bitflags! {
@@ -59,7 +58,7 @@ pub enum JniValue {
     Float(f32),
     Double(f64),
     Object(DvmObject),
-    Null
+    Null,
 }
 
 impl JniValue {
@@ -75,7 +74,7 @@ impl JniValue {
             JniValue::Float(f) => f.to_string(),
             JniValue::Double(d) => d.to_string(),
             JniValue::Object(_) => "object".to_string(),
-            JniValue::Null => "null".to_string()
+            JniValue::Null => "null".to_string(),
         }
     }
 }
@@ -100,12 +99,26 @@ pub trait Jni<T: Clone> {
     ///     true
     /// }
     /// ```
-    fn resolve_method(&mut self, vm: &mut DalvikVM64<T>, class: &Rc<DvmClass>, name: &str, signature: &str, is_static: bool) -> bool;
+    fn resolve_method(
+        &mut self,
+        vm: &mut DalvikVM64<T>,
+        class: &Rc<DvmClass>,
+        name: &str,
+        signature: &str,
+        is_static: bool,
+    ) -> bool;
 
     /// Resolve a field by name and signature
     /// If the field is found, return true
     /// Otherwise, return false
-    fn resolve_filed(&mut self, vm: &mut DalvikVM64<T>, class: &Rc<DvmClass>, name: &str, signature: &str, is_static: bool) -> bool;
+    fn resolve_filed(
+        &mut self,
+        vm: &mut DalvikVM64<T>,
+        class: &Rc<DvmClass>,
+        name: &str,
+        signature: &str,
+        is_static: bool,
+    ) -> bool;
 
     /// Call Java Method
     /// Call a static method of a class
@@ -154,20 +167,38 @@ pub trait Jni<T: Clone> {
     ///     return None;
     /// }
     /// ```
-    fn call_method_v(&mut self, vm: &mut DalvikVM64<T>, acc: MethodAcc, class: &Rc<DvmClass>, method: &DvmMethod, instance: Option<&mut DvmObject>, args: &mut VaList<T>) -> JniValue;
+    fn call_method_v(
+        &mut self,
+        vm: &mut DalvikVM64<T>,
+        acc: MethodAcc,
+        class: &Rc<DvmClass>,
+        method: &DvmMethod,
+        instance: Option<&mut DvmObject>,
+        args: &mut VaList<T>,
+    ) -> JniValue;
 
-    fn get_field_value(&mut self, vm: &mut DalvikVM64<T>, class: &Rc<DvmClass>, field: &DvmField, instance: Option<&mut DvmObject>) -> JniValue;
+    fn get_field_value(
+        &mut self,
+        vm: &mut DalvikVM64<T>,
+        class: &Rc<DvmClass>,
+        field: &DvmField,
+        instance: Option<&mut DvmObject>,
+    ) -> JniValue;
 
-    fn set_field_value(&mut self, vm: &mut DalvikVM64<T>, class: &Rc<DvmClass>, field: &DvmField, instance: Option<&mut DvmObject>, value: JniValue);
+    fn set_field_value(
+        &mut self,
+        vm: &mut DalvikVM64<T>,
+        class: &Rc<DvmClass>,
+        field: &DvmField,
+        instance: Option<&mut DvmObject>,
+        value: JniValue,
+    );
 
     fn destroy(&mut self) {}
 }
 
 impl<'a, T: Clone> VaList<'a, T> {
-    pub(crate) fn new(
-        emulator: &AndroidEmulator<'a, T>,
-        args: u64,
-    ) -> VaList<'a, T> {
+    pub(crate) fn new(emulator: &AndroidEmulator<'a, T>, args: u64) -> VaList<'a, T> {
         let args = VMPointer::new(args, 0, emulator.backend.clone());
         let stack = args.read_u64_with_offset(0).unwrap();
         let gr_top = args.read_u64_with_offset(8).unwrap();
@@ -186,7 +217,7 @@ impl<'a, T: Clone> VaList<'a, T> {
 }
 
 impl<T: Clone> VaPrimitive<T> for DvmObject {
-    unsafe fn get(list: &mut VaList<T>, dvm: &DalvikVM64<T>) -> Self {
+    fn get(list: &mut VaList<T>, dvm: &DalvikVM64<T>) -> Self {
         let object_id = list.get::<i64>(dvm);
         let flag = get_flag_id(object_id);
         if flag == JNI_FLAG_OBJECT {
@@ -200,14 +231,12 @@ impl<T: Clone> VaPrimitive<T> for DvmObject {
 }
 
 impl<T: Clone> VaPrimitive<T> for Vec<u8> {
-    unsafe fn get(list: &mut VaList<T>, dvm: &DalvikVM64<T>) -> Self {
+    fn get(list: &mut VaList<T>, dvm: &DalvikVM64<T>) -> Self {
         let object = list.get::<DvmObject>(dvm);
         match object {
             DvmObject::SimpleInstance(_) => unreachable!(),
             DvmObject::ObjectArray(_, _) => unreachable!(),
-            DvmObject::ByteArray(bytes) => {
-                bytes
-            }
+            DvmObject::ByteArray(bytes) => bytes,
             DvmObject::DataMutInstance(_, _) => unreachable!(),
             DvmObject::DataInstance(_, _) => unreachable!(),
             DvmObject::Class(_) => unreachable!(),
@@ -218,21 +247,17 @@ impl<T: Clone> VaPrimitive<T> for Vec<u8> {
 }
 
 impl<T: Clone> VaPrimitive<T> for String {
-    unsafe fn get(list: &mut VaList<T>, dvm: &DalvikVM64<T>) -> Self {
+    fn get(list: &mut VaList<T>, dvm: &DalvikVM64<T>) -> Self {
         let object = list.get::<DvmObject>(dvm);
         match object {
             DvmObject::SimpleInstance(_) => unreachable!(),
             DvmObject::ObjectArray(_, _) => unreachable!(),
-            DvmObject::ByteArray(bytes) => {
-                String::from_utf8_unchecked(bytes)
-            }
+            DvmObject::ByteArray(bytes) => unsafe { String::from_utf8_unchecked(bytes) },
             DvmObject::DataMutInstance(_, _) => unreachable!(),
             DvmObject::DataInstance(_, _) => unreachable!(),
             DvmObject::Class(_) => unreachable!(),
             DvmObject::ObjectRef(_) => unreachable!(),
-            DvmObject::String(str) => {
-                str
-            },
+            DvmObject::String(str) => str,
         }
     }
 }
@@ -252,13 +277,22 @@ pub(crate) fn generate_object_id(object_seq: i64) -> i64 {
     JNI_FLAG_OBJECT << 32 | object_seq
 }
 
-pub(crate) fn get_class_id(id: i64) -> i64 { id >> 16 }
+#[allow(unused)]
+pub(crate) fn get_class_id(id: i64) -> i64 {
+    id >> 16
+}
 
-pub(crate) fn get_member_id(id: i64) -> i64 { id & 0xFFFF }
+pub(crate) fn get_member_id(id: i64) -> i64 {
+    id & 0xFFFF
+}
 
-pub(crate) fn get_object_seq(id: i64) -> i64 { id & 0xFFFFFFFF }
+pub(crate) fn get_object_seq(id: i64) -> i64 {
+    id & 0xFFFFFFFF
+}
 
-pub fn get_flag_id(id: i64) -> i64 { id >> 32 }
+pub fn get_flag_id(id: i64) -> i64 {
+    id >> 32
+}
 
 macro_rules! jni_result_from {
     (for $variant:ident, $type:ty) => {
@@ -304,7 +338,10 @@ macro_rules! jni_result_into {
             fn into(self) -> $type {
                 match self {
                     JniValue::$variant(item) => item,
-                    _ => panic!("Invalid JniResult: make sure it is {}", stringify!($variant))
+                    _ => panic!(
+                        "Invalid JniResult: make sure it is {}",
+                        stringify!($variant)
+                    ),
                 }
             }
         }
@@ -316,9 +353,9 @@ jni_result_into!(for Object, DvmObject);
 impl Into<i64> for JniValue {
     fn into(self) -> i64 {
         match self {
-            /// The code here is written in this way because the following types return values using the X0 register,
-            /// floating-point numbers return values using the Q0 register,
-            /// and Object requires calculating the object_id to return.
+            // The code here is written in this way because the following types return values using the X0 register,
+            // floating-point numbers return values using the Q0 register,
+            // and Object requires calculating the object_id to return.
             JniValue::Void => 0,
             JniValue::Boolean(z) => if z { 1 } else { 0 },
             JniValue::Byte(b) => b as i64,
@@ -337,7 +374,7 @@ impl Into<f64> for JniValue {
         match self {
             JniValue::Float(f) => f as f64,
             JniValue::Double(d) => d,
-            _ => panic!("Invalid JniResult: make sure it is Float or Double")
+            _ => panic!("Invalid JniResult: make sure it is Float or Double"),
         }
     }
 }
@@ -346,14 +383,14 @@ impl JniValue {
     pub fn is_none(&self) -> bool {
         match self {
             JniValue::Null => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_void(&self) -> bool {
         match self {
             JniValue::Void => true,
-            _ => false
+            _ => false,
         }
     }
 }

@@ -1,8 +1,8 @@
-use std::marker::PhantomData;
-use anyhow::anyhow;
-use log::{debug, error, info, warn};
 use crate::emulator::AndroidEmulator;
 use crate::pointer::VMPointer;
+use anyhow::anyhow;
+use log::error;
+use std::marker::PhantomData;
 
 #[derive(Clone)]
 pub(crate) enum InitFunction<'a, T: Clone> {
@@ -25,7 +25,11 @@ pub(crate) struct AbsoluteInitFunction<'a, T: Clone> {
 }
 
 impl<'a, T: Clone> AbsoluteInitFunction<'a, T> {
-    pub fn new(load_base: u64, lib_name: String, ptr: VMPointer<'a, T>) -> anyhow::Result<AbsoluteInitFunction<'a, T>> {
+    pub fn new(
+        load_base: u64,
+        lib_name: String,
+        ptr: VMPointer<'a, T>,
+    ) -> anyhow::Result<AbsoluteInitFunction<'a, T>> {
         let addr = ptr.read_u64_with_offset(0)?;
         Ok(Self {
             load_base,
@@ -48,7 +52,13 @@ impl<'a, T: Clone> InitFunctionTrait<'a, T> for AbsoluteInitFunction<'a, T> {
         }
 
         if address == 0 {
-            error!("[{}] CallInitFunction: address=0x{:X}, ptr={:X}, func={:X}", self.lib_name, address, self.ptr.addr, self.ptr.read_i64_with_offset(0)?);
+            error!(
+                "[{}] CallInitFunction: address=0x{:X}, ptr={:X}, func={:X}",
+                self.lib_name,
+                address,
+                self.ptr.addr,
+                self.ptr.read_i64_with_offset(0)?
+            );
             return Ok(address);
         }
 
@@ -65,9 +75,10 @@ impl<'a, T: Clone> InitFunctionTrait<'a, T> for AbsoluteInitFunction<'a, T> {
 #[derive(Clone)]
 pub(crate) struct LinuxInitFunction<'a, T: Clone> {
     pub load_base: u64,
+    #[allow(unused)]
     pub lib_name: String,
     pub addr: u64,
-    pd: PhantomData<&'a T>
+    pd: PhantomData<&'a T>,
 }
 
 impl<'a, T: Clone> LinuxInitFunction<'a, T> {
