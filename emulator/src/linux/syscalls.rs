@@ -1297,6 +1297,10 @@ pub fn syscall_pipe2<T: Clone>(backend: &Backend<T>, emulator: &AndroidEmulator<
     let write_pipe = read_pipe.clone();*/
 }
 
+pub fn syscall_nr3264_fcntl<T: Clone>(backend: &Backend<T>, emulator: &AndroidEmulator<T>) {
+    panic();
+}
+
 #[inline]
 fn open<T: Clone>(emulator: &AndroidEmulator<T>, path: &str, flags: OFlag, mode: i32, from_module: &str) -> (i32, i32) {
     if path == "/dev/__properties__" {
