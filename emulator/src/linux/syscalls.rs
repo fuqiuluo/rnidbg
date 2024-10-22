@@ -1298,7 +1298,7 @@ pub fn syscall_pipe2<T: Clone>(backend: &Backend<T>, emulator: &AndroidEmulator<
 }
 
 pub fn syscall_nr3264_fcntl<T: Clone>(backend: &Backend<T>, emulator: &AndroidEmulator<T>) {
-    panic();
+    panic!();
 }
 
 #[inline]
