@@ -38,3 +38,4 @@ An ARM64 emulator written in Rust, based on the secondary development of unidbg.
 - [Rust](https://www.rust-lang.org/)
 - [unidbg](https://github.com/zhkl0228/unidbg)
 - [dynarmic](https://github.com/lioncash/dynarmic)
+- [Dobby](https://github.com/jmpews/Dobby)
