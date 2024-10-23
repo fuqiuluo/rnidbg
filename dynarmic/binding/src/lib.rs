@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::mem;
 use std::process::exit;
-use std::ptr::{null, null_mut};
+use std::ptr::{null_mut};
 use std::rc::Rc;
 use ansi_term::Color;
 use anyhow::anyhow;
@@ -408,21 +408,19 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
             });
             let user_data = cb.as_mut() as *mut _ as *const c_void;
             ffi::dynarmic_set_svc_callback(self.cur_handle, |swi, user_data| {
-                unsafe {
-                    if swi == 114514 {
-                        return; // test
-                    }
-                    let cb = &mut *(user_data as *mut DyHook<T, F>);
-                    let dynarmic = &cb.dy;
-                    let pc = ffi::reg_read_pc(dynarmic.cur_handle);
-                    let until = (*dynarmic.metadata.get()).until;
-
-                    if option_env!("DYNARMIC_DEBUG") == Some("1") {
-                        println!("{}[Dynarmic]{} SVC callback: swi={}", Color::Green.paint("[*]"), Color::White.paint(""), swi);
-                    }
-                    //panic!("SVC callback is not implemented");
-                    (cb.callback)(dynarmic, swi, until, pc);
+                if swi == 114514 {
+                    return; // test
                 }
+                let cb = &mut *(user_data as *mut DyHook<T, F>);
+                let dynarmic = &cb.dy;
+                let pc = ffi::reg_read_pc(dynarmic.cur_handle);
+                let until = (*dynarmic.metadata.get()).until;
+
+                if option_env!("DYNARMIC_DEBUG") == Some("1") {
+                    println!("{}[Dynarmic]{} SVC callback: swi={}", Color::Green.paint("[*]"), Color::White.paint(""), swi);
+                }
+                //panic!("SVC callback is not implemented");
+                (cb.callback)(dynarmic, swi, until, pc);
             }, user_data);
             (*self.metadata.get()).svc_callback = Some(cb);
         }

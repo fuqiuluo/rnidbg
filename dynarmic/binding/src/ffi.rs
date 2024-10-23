@@ -55,7 +55,6 @@ extern "C" {
 
     pub fn reg_read_tpidr_el0(dynarmic: *mut c_void) -> u64;
 
-
     pub fn reg_write_vector(dynarmic: *mut c_void, index: u64, array: *mut u64) -> i32;
 
     pub fn reg_read_vector(dynarmic: *mut c_void, index: u64, array: *mut u64) -> i32;

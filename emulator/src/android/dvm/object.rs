@@ -64,7 +64,6 @@ impl DvmObject {
             match m {
                 DvmMember::Field(_) => false,
                 DvmMember::Method(method) => {
-                    //println!("method.name: {}, method.signature: {}", method.name, method.signature);
                     method.name == method_name && method.signature == signature
                 }
             }

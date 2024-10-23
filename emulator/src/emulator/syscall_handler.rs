@@ -12,6 +12,7 @@ use crate::emulator::{AndroidEmulator, SvcMemory, VMPointer};
 use crate::emulator::thread::TaskStatus;
 use crate::keystone::assemble_no_check;
 use crate::linux::syscalls;
+use crate::memory::svc_memory::SvcCallResult;
 
 const EXCP_UDEF: u32 = 1;
 const EXCP_SWI: u32 = 2;
@@ -115,14 +116,14 @@ fn arm64_syscall_handler_dynarmic<T: Clone>(swi: i32, emulator: &AndroidEmulator
         let svc = svc_memory.get_svc(swi as u32);
         if let Some(svc) = svc {
             match svc.handle(&emulator) {
-                Ok(Some(ret)) => {
-                    backend.reg_write_i64(RegisterARM64::X0, ret).unwrap();
-                }
-                Ok(None) => {}
-                Err(e) => {
+                SvcCallResult::VOID => {}
+                SvcCallResult::FUCK(e) => {
                     error!("svc handle failed: {:?}", e);
                     backend.emu_stop(TaskStatus::X, emulator)
                         .expect("failed to stop emulator");
+                }
+                SvcCallResult::RET(ret) => {
+                    backend.reg_write_i64(RegisterARM64::X0, ret).unwrap();
                 }
             }
             return;

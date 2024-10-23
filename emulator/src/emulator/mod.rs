@@ -122,6 +122,10 @@ impl <'a, T: Clone> AndroidEmulator<'a, T> {
         unsafe { &mut *self.inner.get() }
     }
 
+    pub(crate) unsafe fn inner_ptr(&self) -> *mut AndroidEmulatorInner<'a, T> {
+        self.inner.get()
+    }
+
     pub fn destroy(&self) {
         #[cfg(feature = "dynarmic_backend")]
         if let Backend::Dynarmic(dynarmic) = &self.backend {

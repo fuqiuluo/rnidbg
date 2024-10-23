@@ -1,9 +1,11 @@
+
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use anyhow::anyhow;
 use bytes::{BufMut, BytesMut};
-use log::info;
+use log::{debug, info};
 use crate::backend::{Backend, Permission};
 use crate::emulator::{AndroidEmulator, VMPointer, SVC_BASE, SVC_MAX, SVC_SIZE};
 use crate::tool::align_size;
@@ -47,7 +49,7 @@ impl<'a, T: Clone> SvcMemory<'a, T> {
 
     pub fn register_svc(&mut self, svc_box: Box<dyn Arm64Svc<T> + 'a>) -> u64 {
         if option_env!("PRINT_SVC_REGISTER").unwrap_or("") == "1" {
-            println!("register_svc: name={}, svc_number=0x{:x}", &svc_box.name(), self.arm_svc_number + 1);
+            debug!("register_svc: name={}, svc_number=0x{:x}", &svc_box.name(), self.arm_svc_number + 1);
         }
         let pointer = unsafe {
             let number = {
@@ -67,7 +69,7 @@ impl<'a, T: Clone> SvcMemory<'a, T> {
         let mut pointer = self.base.share(0);
 
         if option_env!("PRINT_SYSCALL_LOG") == Some("1") {
-            println!("svc allocate: base=0x{:X}, size={}, label={}", pointer.addr, size, label);
+            debug!("svc allocate: base=0x{:X}, size={}, label={}", pointer.addr, size, label);
         }
 
         self.base = pointer.share(size as i64);
@@ -102,7 +104,6 @@ pub trait HookListener<'a, T: Clone> {
 }
 
 pub trait Arm64Svc<T: Clone> {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str;
 
     /// 通过SVC实现JNI函数的调用
@@ -111,7 +112,6 @@ pub trait Arm64Svc<T: Clone> {
         buf.put_u32_le(assemble_svc(number)); // "svc #0x" + svcNumber
         buf.put_u32_le(0xd65f03c0); // ret
 
-        #[cfg(feature = "show_svc_name")]
         {
             let ptr = svc.allocate(buf.len(), format!("Arm64Svc.{}", self.name()).as_str());
             ptr.write_bytes(buf.freeze()).unwrap();
@@ -122,7 +122,7 @@ pub trait Arm64Svc<T: Clone> {
         ptr.addr
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>>;
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult;
 
     fn on_post_callback(&self, emu: &AndroidEmulator<T>) -> u64 {
         0
@@ -134,54 +134,74 @@ pub trait Arm64Svc<T: Clone> {
 }
 
 pub struct SimpleArm64Svc<T: Clone> {
-    #[cfg(feature = "show_svc_name")]
     pub name: String,
-    pub handle: fn(&AndroidEmulator<T>) -> anyhow::Result<Option<i64>>
+    pub handle: fn(name: &str, &AndroidEmulator<T>) -> SvcCallResult
 }
 
 impl<T: Clone> Arm64Svc<T> for SimpleArm64Svc<T> {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         self.name.as_str()
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        (self.handle)(emu)
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
+        (self.handle)(self.name.as_str(), emu)
     }
 }
 
+#[derive(Debug)]
+pub enum SvcCallResult {
+    VOID,
+    FUCK(anyhow::Error),
+    RET(i64)
+}
+
+impl SvcCallResult {
+    fn is_ok(&self) -> bool {
+        !matches!(self, SvcCallResult::FUCK(_))
+    }
+
+    fn is_err(&self) -> bool {
+        matches!(self, SvcCallResult::FUCK(_))
+    }
+}
+//
+// impl Try for SvcCallResult {
+//     type Output = i64;
+//     type Residual = SvcCallResult;
+//
+//     fn from_output(output: Self::Output) -> Self {
+//         SvcCallResult::RET(output)
+//     }
+//
+//     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
+//         match self {
+//             SvcCallResult::RET(val) => ControlFlow::Continue(val),
+//             SvcCallResult::FUCK(err) => ControlFlow::Break(SvcCallResult::FUCK(err)),
+//             SvcCallResult::VOID => ControlFlow::Break(SvcCallResult::VOID),
+//         }
+//     }
+// }
+//
+// impl FromResidual for SvcCallResult {
+//     fn from_residual(residual: Self::Residual) -> Self {
+//         residual
+//     }
+// }
+//
+// impl FromResidual<Result<Infallible, anyhow::Error>> for SvcCallResult {
+//     fn from_residual(residual: Result<Infallible, anyhow::Error>) -> Self {
+//         match residual {
+//             Err(err) => SvcCallResult::FUCK(err),
+//             _ => unreachable!(),
+//         }
+//     }
+// }
+
 impl<T: Clone> SimpleArm64Svc<T> {
-    pub fn new(name: &str, handle: fn(&AndroidEmulator<T>) -> anyhow::Result<Option<i64>>) -> Box<SimpleArm64Svc<T>> {
+    pub fn new(name: &str, handle: fn(&str, &AndroidEmulator<T>) -> SvcCallResult) -> Box<SimpleArm64Svc<T>> {
         Box::new(SimpleArm64Svc {
-            #[cfg(feature = "show_svc_name")]
             name: name.to_string(),
             handle
         })
     }
 }
-
-/*pub(crate) struct SvcContainer<T, S: Arm64Svc<T>> {
-    svc: S,
-    _marker: PhantomData<T>,
-}
-
-impl<T, S: Arm64Svc<T>> SvcContainer<T, S> {
-    fn new(svc: S) -> Self {
-        SvcContainer {
-            svc,
-            _marker: PhantomData,
-        }
-    }
-
-    fn handle(&self, emulator: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        self.svc.handle(emulator)
-    }
-
-    fn on_register(&self, svc: &mut SvcMemory<T>, number: u32) -> u64 {
-        self.svc.on_register(svc, number)
-    }
-
-    fn on_post_callback(&self, emulator: &AndroidEmulator<T>) -> u64 {
-        self.svc.on_post_callback(emulator)
-    }
-}*/

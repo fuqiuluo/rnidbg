@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::mem;
-use anyhow::anyhow;
+use anyhow::{anyhow, Error};
 use bytes::{Buf, BufMut, BytesMut};
-use log::{error, info};
+use log::{debug, error, info};
 use crate::backend::RegisterARM64;
 use crate::emulator::{AndroidEmulator, POST_CALLBACK_SYSCALL_NUMBER, VMPointer};
 use crate::keystone;
@@ -10,7 +10,8 @@ use crate::emulator::memory::MemoryBlockTrait;
 use crate::linux::errno::Errno;
 use crate::linux::PAGE_ALIGN;
 use crate::linux::structs::DlInfo;
-use crate::memory::svc_memory::{Arm64Svc, assemble_svc, HookListener, SvcMemory};
+use crate::memory::svc_memory::{Arm64Svc, assemble_svc, HookListener, SvcMemory, SvcCallResult};
+use crate::memory::svc_memory::SvcCallResult::{FUCK, RET, VOID};
 
 struct DlIteratePhdr;
 struct DlClose<'a, T: Clone>(pub VMPointer<'a, T>);
@@ -54,7 +55,6 @@ impl<'a, T: Clone> HookListener<'a, T> for ArmLD64<'a, T> {
 }
 
 impl<T: Clone> Arm64Svc<T> for DlIteratePhdr {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "DlIteratePhdr"
     }
@@ -102,9 +102,9 @@ impl<T: Clone> Arm64Svc<T> for DlIteratePhdr {
         pointer.addr
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        let cb = emu.backend.reg_read(RegisterARM64::X0)?;
-        let data = emu.backend.reg_read(RegisterARM64::X1)?;
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
+        let cb = emu.backend.reg_read(RegisterARM64::X0).unwrap();
+        let data = emu.backend.reg_read(RegisterARM64::X1).unwrap();
 
         let mut modules = emu.inner_mut()
             .memory
@@ -130,47 +130,55 @@ impl<T: Clone> Arm64Svc<T> for DlIteratePhdr {
         let size = 64;
         let modules_len = modules.len();
 
-        let mut ptr = emu.falloc(size * modules_len, true)?;
-        let sp = emu.backend.reg_read(RegisterARM64::SP)
-            .map_err(|e| anyhow!("failed to read SP: {:?}", e))?;
+        let Ok(mut ptr) = emu.falloc(size * modules_len, true) else {
+            return FUCK(anyhow!("unable to alloc memory for DlIteratePhdr"))
+        };
+        let sp = match emu.backend.reg_read(RegisterARM64::SP)
+            .map_err(|e| anyhow!("failed to read SP: {:?}", e)) {
+            Ok(sp) => sp,
+            Err(e) => return FUCK(e)
+        };
 
         if option_env!("PRINT_SYSCALL_LOG") == Some("1") {
-            println!("DlIteratePhdr cb={:X}, data={:X}, size={}, sp={:X}", cb, data, modules_len, sp);
+            debug!("DlIteratePhdr cb={:X}, data={:X}, size={}, sp={:X}", cb, data, modules_len, sp);
         }
 
         let sp = VMPointer::new(sp, 0, emu.backend.clone());
         let mut sp = sp.share(-8);
-        sp.write_u64(0)?; // NULL-terminated
+        sp.write_u64(0).unwrap(); // NULL-terminated
 
         for (name, vaddr, phdr, phnum) in modules {
             info!("DlIteratePhdr: name={}, vaddr={:X}, phdr={:X}, phnum={}", name, vaddr, phdr, phnum);
 
-            let dlpi_name = emu.falloc(name.len() + 1, true)?;
-            dlpi_name.write_c_string(name.as_str())?;
-            ptr.write_u64_with_offset(0, vaddr)?;
-            ptr.write_u64_with_offset(8, dlpi_name.addr)?;
-            ptr.write_u64_with_offset(16, phdr as u64)?;
-            ptr.write_u16_with_offset(24, phnum as u16)?;
+            let dlpi_name = match emu.falloc(name.len() + 1, true) {
+                Ok(p) => p,
+                Err(e) => return FUCK(e)
+            };
+            dlpi_name.write_c_string(name.as_str()).unwrap();
+            ptr.write_u64_with_offset(0, vaddr).unwrap();
+            ptr.write_u64_with_offset(8, dlpi_name.addr).unwrap();
+            ptr.write_u64_with_offset(16, phdr as u64).unwrap();
+            ptr.write_u16_with_offset(24, phnum as u16).unwrap();
 
             sp = sp.share(-8);
-            sp.write_u64(data)?;
+            sp.write_u64(data).unwrap();
 
             sp = sp.share(-8);
-            sp.write_u64(size as u64)?;
+            sp.write_u64(size as u64).unwrap();
 
             sp = sp.share(-8);
-            sp.write_u64(ptr.addr)?;
+            sp.write_u64(ptr.addr).unwrap();
 
             sp = sp.share(-8);
-            sp.write_u64(cb)?;
+            sp.write_u64(cb).unwrap();
 
             ptr = ptr.share(size as i64);
         }
 
         emu.backend.reg_write(RegisterARM64::SP, sp.addr)
-            .map_err(|e| anyhow!("failed to write SP: {:?}", e))?;
+            .map_err(|e| anyhow!("failed to write SP: {:?}", e)).unwrap();
 
-       Ok(None)
+       VOID
     }
 
     fn on_post_callback(&self, emu: &AndroidEmulator<T>) -> u64 {
@@ -179,29 +187,26 @@ impl<T: Clone> Arm64Svc<T> for DlIteratePhdr {
 }
 
 impl<T: Clone> Arm64Svc<T> for DlError<'_, T> {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "DlError"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
         panic!("dlerror not supported");
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for DlClose<'_, T> {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "DlClose"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
         panic!("dlclose not supported")
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for DlOpen<'_, T> {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "DlOpen"
     }
@@ -228,59 +233,58 @@ impl<T: Clone> Arm64Svc<T> for DlOpen<'_, T> {
         pointer.addr
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        let file_name_ptr = VMPointer::new(emu.backend.reg_read(RegisterARM64::X0)?, 0, emu.backend.clone());
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
+        let file_name_ptr = VMPointer::new(emu.backend.reg_read(RegisterARM64::X0).unwrap(), 0, emu.backend.clone());
 
-        let flags = emu.backend.reg_read(RegisterARM64::X1)?;
-        let file_name = file_name_ptr.read_string()?;
+        let flags = emu.backend.reg_read(RegisterARM64::X1).unwrap();
+        let file_name = file_name_ptr.read_string().unwrap();
 
-        let pointer = VMPointer::new(emu.backend.reg_read(RegisterARM64::SP)?, 0, emu.backend.clone());
+        let pointer = VMPointer::new(emu.backend.reg_read(RegisterARM64::SP).unwrap(), 0, emu.backend.clone());
         let pointer = pointer.share_with_size(-8, 0); // ret
 
         if !file_name.is_ascii() {
             if option_env!("PRINT_SYSCALL_LOG") == Some("1") {
-                println!("syscall dlopen(file_name=hex::decode({}), flags=0x{:X}) => 0", hex::encode(file_name.as_bytes()), flags);
+                debug!("syscall dlopen(file_name=hex::decode({}), flags=0x{:X}) => 0", hex::encode(file_name.as_bytes()), flags);
             }
 
-            pointer.write_u64(0)?; // dlopen函数调用返回值
+            pointer.write_u64(0).unwrap(); // dlopen函数调用返回值
             let pointer = pointer.share_with_size(-8, 0);
-            pointer.write_u64(0)?;
-            emu.set_errno(Errno::ENOENT.as_i32())?;
-            emu.backend.reg_write(RegisterARM64::SP, pointer.addr)?;
+            pointer.write_u64(0).unwrap();
+            emu.set_errno(Errno::ENOENT.as_i32()).unwrap();
+            emu.backend.reg_write(RegisterARM64::SP, pointer.addr).unwrap();
 
-            return Ok(Some(0));
+            return RET(0)
         } else {
             if option_env!("PRINT_SYSCALL_LOG") == Some("1") {
-                println!("syscall dlopen(file_name={}, flags=0x{:X})", file_name, flags);
+                debug!("syscall dlopen(file_name={}, flags=0x{:X})", file_name, flags);
             }
         }
 
         if file_name == "libnetd_client.so" {
-            pointer.write_u64(0)?; // dlopen函数调用返回值
+            pointer.write_u64(0).unwrap(); // dlopen函数调用返回值
             let pointer = pointer.share_with_size(-8, 0);
-            pointer.write_u64(0)?;
+            pointer.write_u64(0).unwrap();
             if pointer.addr <= 0 {
                 panic!("dlopen failed");
             }
-            emu.backend.reg_write(RegisterARM64::SP, pointer.addr)?;
-            return Ok(Some(0));
+            emu.backend.reg_write(RegisterARM64::SP, pointer.addr).unwrap();
+            return RET(0)
         } else {
             panic!("dlopen not supported");
         }
 
-        Err(anyhow!("dlopen not supported"))
+        FUCK(anyhow!("dlopen not supported"))
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for DlAddr {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "DlAddr"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        let addr = emu.backend.reg_read(RegisterARM64::X0)?;
-        let info_ptr = emu.backend.reg_read(RegisterARM64::X1)?;
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
+        let addr = emu.backend.reg_read(RegisterARM64::X0).unwrap();
+        let info_ptr = emu.backend.reg_read(RegisterARM64::X1).unwrap();
 
         let module = emu.inner_mut().memory.find_module_by_address(addr);
         if let Some(module) = module {
@@ -291,10 +295,10 @@ impl<T: Clone> Arm64Svc<T> for DlAddr {
             return if let Ok(symbol) = symbol {
                 let path = &module.path(emu);
                 //let path = path.split('/').last().unwrap();
-                let path_ptr = emu.falloc(path.len() + 1 + symbol.name.len() + 1, true)?;
-                path_ptr.write_c_string(path)?;
+                let path_ptr = emu.falloc(path.len() + 1 + symbol.name.len() + 1, true).unwrap();
+                path_ptr.write_c_string(path).unwrap();
                 let sname_ptr = path_ptr.share((path.len() + 1) as i64);
-                sname_ptr.write_c_string(symbol.name.as_str())?;
+                sname_ptr.write_c_string(symbol.name.as_str()).unwrap();
 
                 let mut buffer = [0u8; INFO_SIZE];
                 let info = unsafe { &mut *(buffer.as_mut_ptr() as *mut DlInfo) };
@@ -303,20 +307,20 @@ impl<T: Clone> Arm64Svc<T> for DlAddr {
                 info.dli_sname = sname_ptr.addr;
                 info.dli_saddr = symbol.address();
 
-                emu.backend.mem_write(info_ptr, &buffer)?;
+                emu.backend.mem_write(info_ptr, &buffer).unwrap();
 
                 if option_env!("PRINT_SYSCALL_LOG") == Some("1") {
-                    println!("syscall dladdr(addr=0x{:X}, info_ptr=0x{:X}) => Module(name={}, function)", addr, info_ptr, module.name);
+                    debug!("syscall dladdr(addr=0x{:X}, info_ptr=0x{:X}) => Module(name={}, function)", addr, info_ptr, module.name);
                 }
 
-                Ok(Some(1))
+                RET(1)
             } else {
                 let entry_point = module.entry_point;
                 let path = module.path(emu);
-                let path_ptr = emu.malloc(path.len() + 1 + 6, false)?.pointer;
-                path_ptr.write_c_string(path.as_str())?;
+                let path_ptr = emu.malloc(path.len() + 1 + 6, false).unwrap().pointer;
+                path_ptr.write_c_string(path.as_str()).unwrap();
                 let sname_ptr = path_ptr.share((path.len() + 1) as i64);
-                sname_ptr.write_c_string("start")?;
+                sname_ptr.write_c_string("start").unwrap();
 
                 let mut buffer = [0u8; INFO_SIZE];
                 let info = unsafe { &mut *(buffer.as_mut_ptr() as *mut DlInfo) };
@@ -324,41 +328,39 @@ impl<T: Clone> Arm64Svc<T> for DlAddr {
                 info.dli_fbase = module.virtual_base;
                 info.dli_sname = sname_ptr.addr;
                 info.dli_saddr = entry_point;
-                emu.backend.mem_write(info_ptr, buffer.as_slice())?;
+                emu.backend.mem_write(info_ptr, buffer.as_slice()).unwrap();
 
                 if option_env!("PRINT_SYSCALL_LOG") == Some("1") {
-                    println!("syscall dladdr(addr=0x{:X}, info_ptr=0x{:X}, path={}) => Module(name={}, unk)", addr, info_ptr, path, module.name);
+                    debug!("syscall dladdr(addr=0x{:X}, info_ptr=0x{:X}, path={}) => Module(name={}, unk)", addr, info_ptr, path, module.name);
                 }
 
-                Ok(Some(1))
+                RET(1)
             }
         } else {
             if option_env!("PRINT_SYSCALL_LOG") == Some("1") {
-                println!("syscall dladdr(addr=0x{:X}, info_ptr=0x{:X}) => NotFound", addr, info_ptr);
+                debug!("syscall dladdr(addr=0x{:X}, info_ptr=0x{:X}) => NotFound", addr, info_ptr);
             }
         }
-        Ok(Some(0))
+        RET(0)
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for DlSym {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "DlSym"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
         panic!("dlsym not supported")
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for DlUnwindFindExidx {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "DlUnwindFindExidx"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
         panic!("DlUnwindFindExidx not supported")
     }
 }

@@ -1,5 +1,6 @@
 mod arm;
 
+use std::hash::{DefaultHasher, Hash, Hasher};
 use bytes::{Buf};
 
 pub use arm::{*};
@@ -44,5 +45,12 @@ pub fn get_segment_protection(flags: u32) -> u32 {
     if (flags & 1) != 0 {
         prot |= 4;
     }
-    return prot;
+    prot
+}
+
+
+pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }

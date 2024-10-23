@@ -1,10 +1,13 @@
 // https://android.googlesource.com/platform/bionic/+/0d787c1fa18c6a1f29ef9840e28a68cf077be1de/libc/bionic/system_properties.c
 
 use std::rc::Rc;
+use anyhow::anyhow;
+use log::{debug, error};
 use crate::backend::RegisterARM64;
 use crate::emulator::AndroidEmulator;
 use crate::linux::structs::PropInfo;
-use crate::memory::svc_memory::Arm64Svc;
+use crate::memory::svc_memory::{Arm64Svc, SvcCallResult};
+use crate::memory::svc_memory::SvcCallResult::{FUCK, RET};
 
 pub(super) struct SystemPropertyGet(Option<Rc<Box<dyn Fn(&str) -> Option<String>>>>);
 pub(super) struct SystemPropertyFind(Option<Rc<Box<dyn Fn(&str) -> Option<String>>>>);
@@ -35,51 +38,67 @@ impl SystemPropertyRead {
 }
 
 impl<T: Clone> Arm64Svc<T> for SystemPropertyGet {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str { "SystemPropertyGet" }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
         let backend = &emu.backend;
-        let name = backend.mem_read_c_string(backend.reg_read(RegisterARM64::X0)?)?;
-        let value = backend.reg_read(RegisterARM64::X1)?;
+        let Ok(name_pointer) = backend.reg_read(RegisterARM64::X0) else {
+            return FUCK(anyhow!("unable to get name_pointer"))
+        };
+        let Ok(name) = backend.mem_read_c_string(name_pointer) else {
+            return FUCK(anyhow!("unable to read name from name pointer: 0x{:X}", name_pointer))
+        };
+        let Ok(value) = backend.reg_read(RegisterARM64::X1) else {
+            return FUCK(anyhow!("unable to get value when handle SystemPropGet"))
+        };
 
         if option_env!("PRINT_SYSTEM_PROP_LOG") == Some("1") {
-            println!("__system_property_get({}, 0x{:X})", name, value);
+            debug!("__system_property_get({}, 0x{:X})", name, value);
         }
 
         if name == "ro.kernel.qemu" || name == "libc.debug.malloc" {
-            backend.mem_write(value, b"\0")?;
-            return Ok(Some(0))
+            if let Err(e) = backend.mem_write(value, b"\0") {
+                return FUCK(anyhow!("unable to write_mem(x1): {}", e))
+            }
+            return RET(0)
         }
         if self.0.is_none() {
             panic!("SystemPropertyGet not supported: name={}, msg=system_property_service not set", name);
         }
         match self.0.as_ref().unwrap()(&name) {
             Some(env) => {
-                backend.mem_write(value, env.as_bytes())?;
+                if let Err(e) = backend.mem_write(value, env.as_bytes()) {
+                    return FUCK(anyhow!("unable to write_mem when handle SystemPropGet: {}", e))
+                }
             }
             None => {
-                backend.mem_write(value, b"\0")?;
+                if let Err(e) = backend.mem_write(value, b"\0") {
+                    return FUCK(anyhow!("unable to write_mem when handle SystemPropGet: {}", e))
+                }
             }
         }
-        Ok(Some(0))
+        RET(0)
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for SystemPropertyFind {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str { "SystemPropertyFind" }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
         let backend = &emu.backend;
-        let name = backend.mem_read_c_string(backend.reg_read(RegisterARM64::X0)?)?;
+        let Ok(name_pointer) = backend.reg_read(RegisterARM64::X0) else {
+            return FUCK(anyhow!("unable to get name_pointer"))
+        };
+        let Ok(name) = backend.mem_read_c_string(name_pointer) else {
+            return FUCK(anyhow!("unable to read name from name pointer: 0x{:X}", name_pointer))
+        };
 
         if option_env!("PRINT_SYSTEM_PROP_LOG") == Some("1") {
-            println!("__system_property_find({})", name);
+            debug!("__system_property_find({})", name);
         }
         
         if name == "debug.atrace.tags.enableflags" {
-            return Ok(Some(0))
+            return RET(0)
         }
 
         if self.0.is_none() {
@@ -94,20 +113,23 @@ impl<T: Clone> Arm64Svc<T> for SystemPropertyFind {
                 prop_info.serial = 0;
                 prop_info.value[..env.len()].copy_from_slice(env.as_bytes());
                 prop_info.value[env.len()] = 0;
-                let pointer = emu.falloc(buf.len(), true)?;
-                pointer.write_data(&buf)?;
-                Ok(Some(pointer.addr as i64))
+                let Ok(pointer) = emu.falloc(buf.len(), true) else {
+                  return FUCK(anyhow!("unable to alloc memory for prop_info"))
+                };
+                if let Err(e) = pointer.write_data(&buf) {
+                    return FUCK(anyhow!("unable to write prop_info: {}", e))
+                }
+                RET(pointer.addr as i64)
             }
-            None =>  Ok(Some(0))
+            None =>  RET(0)
         }
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for SystemPropertyRead {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str { "SystemPropertyRead" }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
         panic!("SystemPropertyRead not supported");
     }
 }

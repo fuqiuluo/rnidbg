@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use log::error;
 use crate::emulator::{AndroidEmulator, RcUnsafeCell};
 use crate::linux::LinuxModule;
-use crate::memory::svc_memory::Arm64Svc;
+use crate::memory::svc_memory::{Arm64Svc, SvcCallResult};
 
 const SO_NAME: &'static str = "libjnigraphics.so";
 
@@ -11,38 +11,32 @@ struct AndroidBitmapLockPixels; //AndroidBitmap_lockPixels
 struct AndroidBitmapUnlockPixels; //AndroidBitmap_unlockPixels
 
 impl<T: Clone> Arm64Svc<T> for AndroidBitmapGetInfo {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "AndroidBitmapGetInfo"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        error!("AndroidBitmapGetInfo unimplemented");
-        Ok(Some(0))
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
+        panic!("AndroidBitmapGetInfo unimplemented");
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for AndroidBitmapLockPixels {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "AndroidBitmapLockPixels"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        error!("AndroidBitmapLockPixels unimplemented");
-        Ok(Some(0))
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
+        panic!("AndroidBitmapLockPixels unimplemented");
     }
 }
 
 impl<T: Clone> Arm64Svc<T> for AndroidBitmapUnlockPixels {
-    #[cfg(feature = "show_svc_name")]
     fn name(&self) -> &str {
         "AndroidBitmapUnlockPixels"
     }
 
-    fn handle(&self, emu: &AndroidEmulator<T>) -> anyhow::Result<Option<i64>> {
-        error!("AndroidBitmapUnlockPixels unimplemented");
-        Ok(Some(0))
+    fn handle(&self, emu: &AndroidEmulator<T>) -> SvcCallResult {
+        panic!("AndroidBitmapUnlockPixels unimplemented");
     }
 }
 

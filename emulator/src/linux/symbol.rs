@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::hash::RandomState;
 use anyhow::anyhow;
 use indexmap::IndexMap;
@@ -7,6 +8,7 @@ use crate::elf::symbol::ElfSymbol;
 use crate::emulator::{AndroidEmulator, RcUnsafeCell, VMPointer};
 use crate::linux::LinuxModule;
 use crate::memory::svc_memory::HookListener;
+use crate::tool;
 use crate::tool::UnicornArg;
 
 pub const WEAK_BASE: i64 = -1;
@@ -46,6 +48,7 @@ impl ModuleSymbol {
         modules: &IndexMap<String, RcUnsafeCell<LinuxModule<T>>>,
         resolve_weak: bool,
         listeners: &Vec<Box<dyn HookListener<'a, T>>>,
+        cache_hook: &mut HashMap<u64, u64>,
         elf_file: &ElfFile
     ) -> anyhow::Result<ModuleSymbol> {
         let symbol_name = self.symbol.as_ref().unwrap().name(elf_file)?;
@@ -74,9 +77,22 @@ impl ModuleSymbol {
                 if !elf_symbol.is_undefined() {
                     let binding = elf_symbol.binding();
                     if binding == BINDING_GLOBAL || binding == BINDING_WEAK {
+                        let hash = tool::calculate_hash(&format!("{}#{}", module.name, symbol_name));
+                        if cache_hook.contains_key(&hash) {
+                            return Ok(ModuleSymbol::new(
+                                self.so_name.to_string(),
+                                WEAK_BASE,
+                                self.symbol.clone(),
+                                self.relocation_addr,
+                                module.name.clone(),
+                                *cache_hook.get(&hash).unwrap()
+                            ));
+                        }
+
                         for listener in listeners {
                             let hook = listener.hook(emulator, module.name.clone(), symbol_name.to_string(), module.base + elf_symbol.value as u64 + self.offset);
                             if hook > 0 {
+                                cache_hook.insert(hash, hook);
                                 module.hook_map.insert(symbol_name.to_string(), hook);
                                 return Ok(ModuleSymbol::new(self.so_name.clone(), WEAK_BASE, Some(elf_symbol.clone()), self.relocation_addr, module.name.clone(), hook));
                             }
@@ -104,9 +120,23 @@ impl ModuleSymbol {
             "android_create_namespace" | "dlvsym" | "android_dlwarning" |
             "dl_unwind_find_exidx" => {
                 if resolve_weak {
+                    let hash = tool::calculate_hash(&format!("{}#{}", "libdl.so", symbol_name));
+
+                    if cache_hook.contains_key(&hash) {
+                        return Ok(ModuleSymbol::new(
+                            self.so_name.to_string(),
+                            WEAK_BASE,
+                            self.symbol.clone(),
+                            self.relocation_addr,
+                            "libdl.so".to_string(),
+                            *cache_hook.get(&hash).unwrap()
+                        ));
+                    }
+
                     for listener in listeners {
                         let hook = listener.hook(&emulator, "libdl.so".to_string(), symbol_name.to_string(), self.offset);
                         if hook > 0 {
+                            cache_hook.insert(hash, hook);
                             return Ok(ModuleSymbol::new(self.so_name.clone(), WEAK_BASE, self.symbol.clone(), self.relocation_addr, "libdl.so".to_string(), hook));
                         }
                     }

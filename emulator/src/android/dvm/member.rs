@@ -1,5 +1,4 @@
-use std::collections::VecDeque;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash};
 
 pub enum DvmMember {
     Field(DvmField),

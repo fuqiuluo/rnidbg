@@ -4,7 +4,6 @@ use crate::android::dvm::member::DvmMember;
 use crate::android::dvm::object::DvmObject;
 use crate::android::jni;
 use crate::android::jni::{JniValue, JNI_FLAG_OBJECT, JNI_FLAG_REF};
-use crate::android::jni::JniValue::Null;
 use crate::dalvik;
 use crate::emulator::AndroidEmulator;
 use crate::tool::UnicornArg;
@@ -98,7 +97,6 @@ impl DvmClass {
             let ret = emulator.e_func(method.fn_ptr, native_args);
             let ret_value = if let Some(obj_id) = ret {
                 let value = i64::from_le_bytes(obj_id.to_le_bytes());
-                //println!("{:X}", value);
                 let flag = jni::get_flag_id(value);
                 if flag == JNI_FLAG_REF {
                     let obj = dalvik!(emulator).get_global_ref(value);
@@ -118,7 +116,7 @@ impl DvmClass {
                     JniValue::Long(value)
                 }
             } else {
-                Null
+                JniValue::Null
             };
             dalvik!(emulator).local_ref_pool.clear();
             ret_value

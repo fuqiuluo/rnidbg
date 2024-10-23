@@ -5,6 +5,7 @@ pub mod svc_memory;
 use std::cell::UnsafeCell;
 use std::cmp::max;
 use std::collections::{HashMap, VecDeque};
+use std::hash::Hash;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use anyhow::anyhow;
@@ -24,6 +25,7 @@ use crate::linux::init_fun::{AbsoluteInitFunction, InitFunction, LinuxInitFuncti
 use crate::linux::symbol::{LinuxSymbol, ModuleSymbol, WEAK_BASE};
 use crate::memory::library_file::{LibraryFile, LibraryFileTrait};
 use crate::memory::svc_memory::HookListener;
+use crate::tool;
 use crate::tool::{align_addr, align_size, Alignment, get_segment_protection};
 
 pub(crate) struct ModuleMemRegion {
@@ -53,6 +55,7 @@ pub struct AndroidElfLoader<'a, T: Clone> {
     stack_base: u64,
     environ: VMPointer<'a, T>,
     hook_listeners: Vec<Box<dyn HookListener<'a, T>>>,
+    cache_hook: HashMap<u64, u64>,
 
     pub(crate) mmap_base: u64,
     pub(crate) sp: u64,
@@ -85,6 +88,7 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
             modules: IndexMap::new(),
             malloc: None, free: None,
             temp_memory: HashMap::new(),
+            cache_hook: HashMap::new(),
         };
         memory.set_stack_point(STACK_BASE);
 
@@ -168,7 +172,7 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
 
             let mut resolved_symbol = Vec::new();
             for module_symbol in &m.unresolved_symbol {
-                let resolved = module_symbol.resolve(emulator, &self.modules, true, &self.hook_listeners, elf_file);
+                let resolved = module_symbol.resolve(emulator, &self.modules, true, &self.hook_listeners, &mut self.cache_hook, elf_file);
                 if let Ok(resolved) = resolved {
                     resolved_symbol.push(resolved);
                     //resolved.relocation(m, elf_file, &self.backend)?;
@@ -374,7 +378,7 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
         for (_, module) in &self.modules {
             let linux_module = unsafe { &mut *module.get() };
             linux_module.unresolved_symbol.retain(|symbol| {
-                let resloved = symbol.resolve(emulator, &linux_module.needed_libraries, false, &self.hook_listeners, elf_file);
+                let resloved = symbol.resolve(emulator, &linux_module.needed_libraries, false, &self.hook_listeners, &mut self.cache_hook, elf_file);
                 if let Ok(resloved) = resloved {
                     resloved.relocation_ex(&mut linux_module.resolved_symbol, elf_file, &self.backend).ok();
                     return true;
@@ -556,7 +560,7 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
     }
 
     fn resolve_symbol(
-        &self,
+        &mut self,
         load_base: u64,
         symbol: &Option<ElfSymbol>,
         relocation_addr: &VMPointer<'a, T>,
@@ -573,9 +577,18 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
         if let Some(symbol) = symbol {
             if !symbol.is_undefined() {
                 let symbol_name = symbol.name(elf_file)?;
+
+                let hash = tool::calculate_hash(&format!("{}#{}", so_name, symbol_name));
+
+                if self.cache_hook.contains_key(&hash) {
+                    let hook = self.cache_hook.get(&hash).unwrap();
+                    return Ok(ModuleSymbol::new(so_name.to_string(), WEAK_BASE, Some(symbol.clone()), relocation_addr.addr, so_name.to_string(), *hook));
+                }
+
                 for hook in &self.hook_listeners {
                     let hook = hook.hook(emulator, so_name.to_string(), symbol_name.clone(), load_base + symbol.value as u64 + offset);
                     if hook > 0 {
+                        self.cache_hook.insert(hash, hook);
                         return Ok(ModuleSymbol::new(so_name.to_string(), WEAK_BASE, Some(symbol.clone()), relocation_addr.addr, so_name.to_string(), hook));
                     }
                 }
@@ -585,7 +598,7 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
 
             let module = ModuleSymbol::new(so_name.to_string(), load_base as i64, Some(symbol.clone()), relocation_addr.addr, "".to_string(), offset);
 
-            return module.resolve(emulator, needed_libraries, false, &self.hook_listeners, elf_file);
+            return module.resolve(emulator, needed_libraries, false, &self.hook_listeners, &mut self.cache_hook, elf_file);
         }
 
         Err(anyhow!("symbol is none"))

@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 pub use backend_consts::{*};
 use anyhow::anyhow;
-use log::{info, warn};
+use log::{debug, info, warn};
 #[cfg(feature = "unicorn_backend")]
 use unicorn_engine::{Arch, Arm64CpuModel, ContextMode, Mode, Permission as UnicornPermission, TlbType, Unicorn};
 
@@ -59,7 +59,7 @@ impl<'a, T: Clone> Backend<'a, T> {
         count: usize
     ) -> anyhow::Result<()> {
         if option_env!("EMU_LOG") == Some("1") {
-            println!("emu_start: begin: {:#x}, until: {:#x}, timeout: {:#x}, count: {}", begin, until, timeout, count);
+            debug!("emu_start: begin: {:#x}, until: {:#x}, timeout: {:#x}, count: {}", begin, until, timeout, count);
         }
 
         #[cfg(feature = "unicorn_backend")]

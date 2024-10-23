@@ -1,10 +1,11 @@
+#![allow(non_snake_case)]
+
 pub mod class_resolver;
 pub mod class;
 pub mod object;
 pub mod member;
 mod jni_env_ext;
 
-use std::cell::{RefCell, UnsafeCell};
 use std::cmp::{max, min};
 use std::{fs, mem};
 use std::collections::HashMap;
@@ -14,7 +15,6 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use ansi_term::Color;
 use anyhow::anyhow;
 use bytes::{Buf, Bytes, BytesMut};
@@ -34,7 +34,7 @@ use crate::elf::parser::ElfFile;
 use crate::emulator::{AndroidEmulator, RcUnsafeCell};
 use crate::linux::LinuxModule;
 use crate::memory::library_file::{ElfLibraryFile, LibraryFile};
-use crate::memory::svc_memory::SimpleArm64Svc;
+use crate::memory::svc_memory::{SimpleArm64Svc, SvcCallResult};
 use crate::pointer::VMPointer;
 use crate::tool::UnicornArg;
 
@@ -64,6 +64,33 @@ pub struct DalvikVM64<'a, T: Clone> {
     pd: PhantomData<&'a T>
 }
 
+fn NoImplementedHandler<T: Clone>(name: &str, emulator: &AndroidEmulator<T>) -> SvcCallResult {
+    SvcCallResult::FUCK(anyhow!("Svc({}) No Implemented!", name))
+}
+
+fn GetEnv<T: Clone>(name: &str, emulator: &AndroidEmulator<T>) -> SvcCallResult {
+    let vm = emulator.backend.reg_read(RegisterARM64::X0).unwrap();
+    let env_pointer = emulator.backend.reg_read(RegisterARM64::X1).unwrap();
+    let version = emulator.backend.reg_read(RegisterARM64::X2).unwrap();
+
+    unsafe {
+        let dvm = dalvik!(emulator) as *mut DalvikVM64<T>;
+        let env = (*dvm).java_env as i64;
+        //let task = emulator.inner_mut().ctx_task;
+        if version as i64 != JNI_VERSION_1_6 {
+            panic!("Unsupported JNI version: 0x{:x}", version);
+        }
+
+        if option_env!("PRINT_JNI_CALLS").unwrap_or("") == "1" {
+            println!("{} {}(vm = 0x{:X}, env = 0x{:X}, version = 0x{:x}) => 0x{:X}", Color::Yellow.paint("JNI:"), Color::Blue.paint("GetEnv"), vm, env_pointer, version, env);
+        }
+
+        emulator.backend.mem_write(env_pointer, &env.to_le_bytes()).unwrap();
+    }
+
+    SvcCallResult::RET(JNI_OK)
+}
+
 impl<'a, T: Clone> DalvikVM64<'a, T> {
     /// https://android.googlesource.com/platform/libnativehelper/+/refs/tags/android-10.0.0_r47/include_jni/jni.h#150
     fn init<'b>(emulator: &'b AndroidEmulator<'a, T>) {
@@ -72,46 +99,15 @@ impl<'a, T: Clone> DalvikVM64<'a, T> {
         let java_env = initialize_env(svc_memory);
 
         // DestroyJavaVM
-        let _destroy_java_vm = svc_memory.register_svc(SimpleArm64Svc::new("Jni-3", |emulator| {
-            panic!("DestroyJavaVM not implemented");
-        }));
+        let _destroy_java_vm = svc_memory.register_svc(SimpleArm64Svc::new("_DestroyJavaVM", NoImplementedHandler));
         // AttachCurrentThread
-        let _attach_current_thread = svc_memory.register_svc(SimpleArm64Svc::new("Jni-3", |emulator| {
-            panic!("AttachCurrentThread not implemented");
-        }));
+        let _attach_current_thread = svc_memory.register_svc(SimpleArm64Svc::new("_AttachCurrentThread", NoImplementedHandler));
         // DetachCurrentThread
-        let _detach_current_thread = svc_memory.register_svc(SimpleArm64Svc::new("Jni-3", |emulator| {
-            panic!("DetachCurrentThread not implemented");
-        }));
+        let _detach_current_thread = svc_memory.register_svc(SimpleArm64Svc::new("_DetachCurrentThread", NoImplementedHandler));
         // GetEnv
-        let _get_env = svc_memory.register_svc(SimpleArm64Svc::new("_GetEnv", |emulator| {
-            let vm = emulator.backend.reg_read(RegisterARM64::X0).unwrap();
-            let env_pointer = emulator.backend.reg_read(RegisterARM64::X1).unwrap();
-            let version = emulator.backend.reg_read(RegisterARM64::X2).unwrap();
-            let dvm = dalvik!(emulator);
-            let env = dvm.java_env as i64;
-            //let task = emulator.inner_mut().ctx_task;
-            if version as i64 != JNI_VERSION_1_6 {
-                panic!("Unsupported JNI version: 0x{:x}", version);
-            }
-
-            // if env_pointer <= 0x720003FFE000 {
-            //     if option_env!("PRINT_JNI_CALLS").unwrap_or("") == "1" {
-            //         println!("{} {}(vm = 0x{:X}, env = 0x{:X}, version = 0x{:x}) => NoAllowed", Color::Yellow.paint("JNI:"), Color::Blue.paint("GetEnv"), vm, env_pointer, version);
-            //     }
-            //     return Ok(Some(JNI_ERR))
-            //}
-
-            if option_env!("PRINT_JNI_CALLS").unwrap_or("") == "1" {
-                println!("{} {}(vm = 0x{:X}, env = 0x{:X}, version = 0x{:x}) => 0x{:X}", Color::Yellow.paint("JNI:"), Color::Blue.paint("GetEnv"), vm, env_pointer, version, env);
-            }
-            emulator.backend.mem_write(env_pointer, &env.to_le_bytes()).unwrap();
-            Ok(Some(JNI_OK))
-        }));
+        let _get_env = svc_memory.register_svc(SimpleArm64Svc::new("_GetEnv", GetEnv));
         // AttachCurrentThreadAsDaemon
-        let _attach_current_thread_as_daemon = svc_memory.register_svc(SimpleArm64Svc::new("Jni-3", |emulator| {
-            panic!("AttachCurrentThreadAsDaemon not implemented");
-        }));
+        let _attach_current_thread_as_daemon = svc_memory.register_svc(SimpleArm64Svc::new("_AttachCurrentThreadAsDaemon", NoImplementedHandler));
 
         let _jniinvoke_interface = svc_memory.allocate(8 * 8, "_JNIInvokeInterface");
         _jniinvoke_interface.write_u64_with_offset(8 * 0, 0).expect("write_u64_with_offset failed: reserved0");
@@ -140,22 +136,6 @@ impl<'a, T: Clone> DalvikVM64<'a, T> {
         emulator.inner_mut().dalvik = Option::from(dvm);
     }
 
-    /// Load an external file and give you a module instance, you can make jni calls via it, etc.
-    ///
-    /// # Example
-    ///```
-    ///use std::ptr::read;
-    ///use core::emulator::AndroidEmulator;
-    ///
-    ///let emulator = AndroidEmulator::create_arm64(32267, 29427, "com.tencent.mobileqq:MSF", ());
-    ///let vm = emulator.create_dalvik_vm();
-    ///let dm = vm
-    ///    .load_library(".\\txlib\\9.0.81\\libfekit.so", true)
-    ///    .map_err(|e| eprintln!("failed to load_library: {}", e))
-    ///    .unwrap();
-    ///let dm = unsafe { &*dm.get() };
-    ///vm.call_jni_onload(&dm).expect("failed to call JNI_OnLoad");
-    /// ```
     pub fn load_library(&self, emulator: AndroidEmulator<'a, T>, elf_file_path: &str, force_init: bool) -> anyhow::Result<RcUnsafeCell<LinuxModule<'a, T>>> {
         let path = PathBuf::from(elf_file_path);
         let file_data = fs::read(path)
@@ -170,22 +150,6 @@ impl<'a, T: Clone> DalvikVM64<'a, T> {
         library
     }
 
-    /// Execute `JNI_onLoad` of an Android library file
-    ///
-    /// # Example
-    ///```
-    ///use std::ptr::read;
-    ///use core::emulator::AndroidEmulator;
-    ///
-    ///let emulator = AndroidEmulator::create_arm64(32267, 29427, "com.tencent.mobileqq:MSF", ());
-    ///let vm = emulator.create_dalvik_vm();
-    ///let dm = vm
-    ///    .load_library(".\\txlib\\9.0.81\\libfekit.so", true)
-    ///    .map_err(|e| eprintln!("failed to load_library: {}", e))
-    ///    .unwrap();
-    ///let dm = unsafe { &*dm.get() };
-    ///vm.call_jni_onload(&dm).expect("failed to call JNI_OnLoad");
-    /// ```
     pub fn call_jni_onload(&mut self, emulator: AndroidEmulator<'a, T>, module: &LinuxModule<T>) -> anyhow::Result<()> {
         let jni_onload = module.find_symbol_by_name("JNI_OnLoad", false)?;
         if option_env!("PRINT_JNI_CALLS").unwrap_or("") == "1" {
@@ -278,41 +242,11 @@ impl<'a, T: Clone> DalvikVM64<'a, T> {
         Some(object)
     }
 
-    /// Throw an error
-    ///
-    /// # Example
-    ///```
-    ///use std::ptr::read;
-    ///use core::emulator::AndroidEmulator;
-    ///
-    ///let emulator = AndroidEmulator::create_arm64(32267, 29427, "com.tencent.mobileqq:MSF", ());
-    ///let vm = emulator.create_dalvik_vm();
-    ///
-    ///vm.throw(vm.resolve_class("java/lang/Exception").unwrap().1.new_simple_instance())
-    /// ```
+
     pub fn throw(&mut self, throwable: DvmObject) {
         self.throwable = Option::from(throwable);
     }
 
-    /// Create a class resolver so that the `class_id` can be provided when `env->FindClass`
-    ///
-    /// # Example
-    /// ```
-    /// use core::emulator::AndroidEmulator;
-    /// use emulator::android::dvm::class_resolver::ClassResolver;
-    ///
-    /// let emulator = AndroidEmulator::create_arm64(32267, 29427, "com.tencent.mobileqq:MSF", ());
-    /// let vm = emulator.create_dalvik_vm();
-    /// vm.set_class_resolver(ClassResolver::new(vec![
-    ///     "java/lang/String",
-    ///     "java/lang/Object",
-    ///     "java/lang/NoClassDefFoundError",
-    ///     "com/tencent/mobileqq/qsec/qsecprotocol/ByteData",
-    ///     "com/tencent/mobileqq/qsec/qsecdandelionsdk/Dandelion",
-    ///     "com/tencent/mobileqq/qsec/qseccodec/SecCipher",
-    ///     "com/tencent/mobileqq/qsec/qsecurity/QSec",
-    ///]));
-    ///```
     pub fn set_class_resolver(&mut self, rs: ClassResolver) {
         self.class_resolver = Option::from(rs);
     }
@@ -384,31 +318,6 @@ impl<'a, T: Clone> DalvikVM64<'a, T> {
         }
     }
 
-    /// Try to construct a `DvmClass`.
-    /// The `class_id` will be provided to you only after you have successfully set up and initialized the `class_resolver`.
-    /// If there is no `class_resolver`, the `class_id` is always **-1** and is always `Option::Some`.
-    /// After setting up the `class_resolver`,
-    /// if there is no class previously declared in the `class_resolver`, this method will return `None`.
-    ///
-    /// # Example
-    /// ```
-    /// use core::emulator::AndroidEmulator;
-    /// use emulator::android::dvm::class_resolver::ClassResolver;
-    ///
-    /// let emulator = AndroidEmulator::create_arm64(32267, 29427, "com.tencent.mobileqq:MSF", ());
-    /// let vm = emulator.create_dalvik_vm();
-    /// vm.set_class_resolver(ClassResolver::new(vec![
-    ///     "java/lang/String",
-    ///     "java/lang/Object",
-    ///     "java/lang/NoClassDefFoundError",
-    ///     "com/tencent/mobileqq/qsec/qsecprotocol/ByteData",
-    ///     "com/tencent/mobileqq/qsec/qsecdandelionsdk/Dandelion",
-    ///     "com/tencent/mobileqq/qsec/qseccodec/SecCipher",
-    ///     "com/tencent/mobileqq/qsec/qsecurity/QSec",
-    /// ]));
-    ///
-    /// let class_pair = vm.resolve_class("com/tencent/mobileqq/qsec/qsecprotocol/ByteData");
-    ///```
     pub fn resolve_class(&self, name: &str) -> Option<(i64, Rc<DvmClass>)> {
         if let Some(ref class_resolver) = self.class_resolver {
             class_resolver.find_class_by_name(name)

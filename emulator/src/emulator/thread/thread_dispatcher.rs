@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::ptr::read;
 use std::rc::Rc;
-use log::{error, warn};
+use log::{debug, error, warn};
 use crate::emulator::AndroidEmulator;
 use crate::emulator::signal::{SignalOps, ISignalTask, SigSet, UnixSigSet, SavableSignalTask, SignalTask};
 use crate::emulator::thread::{AbstractTask, BaseThreadTask, CoveredTaskSignalOps, LuoTask, RunnableTask, Task, TaskStatus};
@@ -99,7 +99,7 @@ impl<'a, T: Clone> UniThreadDispatcher<'a, T> {
                         }
 
                         if option_env!("EMU_LOG") == Some("1") {
-                            println!("thread dispatcher: function64 can dispatch");
+                            debug!("thread dispatcher: function64 can dispatch");
                         }
 
                         if function64.can_dispatch() {
