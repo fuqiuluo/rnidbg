@@ -20,11 +20,12 @@ An ARM64 emulator written in Rust, based on the secondary development of unidbg.
 | EMU_LOG                 | print emulator logs            | 0   |
 | PRINT_MMAP_LOG          | print virtual mmap logs        | 0   |
 
-## RUN TIME VARIABLE IN COMPUTING
+## RUNTIME VARIABLE IN COMPUTING
 
 | VARIABLE NAME     | CLARIFICATION        | DEFAULT VALUE |
 |-------------------|----------------------|---------------|
 | DYNARMIC_JIT_SIZE | Code Cache Size (MB) | 64            |
+| DYNARMIC_FAST_MEM | Enable Fast Memory   | 0             |
 
 ## TODO
 

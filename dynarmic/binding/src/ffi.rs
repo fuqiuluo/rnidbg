@@ -21,7 +21,7 @@ extern "C" {
 
     pub fn dynarmic_init_page_table() -> *mut *mut c_void;
 
-    pub fn dynarmic_new(process_id: u32, memory: *mut c_void, monitor: *mut c_void, page_table: *mut *mut c_void, jit_size: u64, unsafe_optimizations: bool) -> *mut c_void;
+    pub fn dynarmic_new(process_id: u32, memory: *mut c_void, monitor: *mut c_void, page_table: *mut *mut c_void, jit_size: u64, unsafe_optimizations: bool, fats_mem: bool) -> *mut c_void;
 
     pub fn dynarmic_get_cache_size(dynarmic: *mut c_void) -> u64;
 

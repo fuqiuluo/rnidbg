@@ -314,7 +314,8 @@ FQL dynarmic* dynarmic_new(
     Dynarmic::ExclusiveMonitor *monitor,
     void **page_table,
     uint64_t jit_size,
-    bool unsafe_optimizations
+    bool unsafe_optimizations,
+    bool fast_mem
 ) {
     auto backend = (t_dynarmic) malloc(sizeof(dynarmic));
     if(!memory) {
@@ -373,15 +374,17 @@ FQL dynarmic* dynarmic_new(
         config.fastmem_pointer = std::nullopt;
         backend->fastmem = std::nullopt;
 #else
-        void* ptr = mmap(nullptr, pow(2, PAGE_TABLE_ADDRESS_SPACE_BITS), PROT_READ | PROT_WRITE,
-                         MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
-        if (ptr != MAP_FAILED) {
-            config.fastmem_pointer = (uintptr_t) ptr;
-            config.fastmem_address_space_bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
-        } else {
-            config.fastmem_pointer = std::nullopt;
+        if(fast_mem) {
+            void* ptr = mmap(nullptr, pow(2, PAGE_TABLE_ADDRESS_SPACE_BITS), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
+            if (ptr != MAP_FAILED) {
+                config.fastmem_pointer = (uintptr_t) ptr;
+                config.fastmem_address_space_bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
+            } else {
+                config.fastmem_pointer = std::nullopt;
+            }
+            backend->fastmem = config.fastmem_pointer;
         }
-        backend->fastmem = config.fastmem_pointer;
+
 #endif
         config.fastmem_address_space_bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
         config.silently_mirror_fastmem = false;

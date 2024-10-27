@@ -67,7 +67,8 @@ FQL dynarmic* dynarmic_new(
         Dynarmic::ExclusiveMonitor *monitor,
         void **page_table,
         u64 jit_size,
-        bool unsafe_optimizations
+        bool unsafe_optimizations,
+        bool fast_mem
 );
 
 FQL u64 dynarmic_get_cache_size(dynarmic* dynarmic);

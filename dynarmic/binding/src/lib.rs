@@ -90,9 +90,12 @@ impl<'a, T: Clone> Dynarmic<'a, T> {
             jit_size = 128;
         }
 
+        let fast_mem = std::env::var("DYNARMIC_FAST_MEM").unwrap_or("0".to_string())
+            .parse::<u64>().unwrap_or(0) != 0;
+
         let monitor = unsafe { ffi::dynarmic_init_monitor(1) };
         let page_table = unsafe { ffi::dynarmic_init_page_table() };
-        let handle = unsafe { ffi::dynarmic_new(0, memory, monitor, page_table, jit_size * 1024 * 1024, false) };
+        let handle = unsafe { ffi::dynarmic_new(0, memory, monitor, page_table, jit_size * 1024 * 1024, false, fast_mem) };
 
         if option_env!("DYNARMIC_DEBUG") == Some("1") {
             println!("{}[Dynarmic]{} Created new Dynarmic instance: {:X}", Color::Green.paint("[*]"), Color::White.paint(""), handle as usize);
