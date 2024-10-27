@@ -607,7 +607,6 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
     pub fn mem_map(&mut self, address: u64, size: usize, prot: u32, library_name: String, align: u64) -> Alignment {
         let alignment = align_addr(address, size as u64, align as i64);
 
-
         self.backend.mem_map(alignment.address, alignment.size, prot)
             .expect("mem_map failed");
 
@@ -668,7 +667,7 @@ impl<'a, T: Clone> AndroidElfLoader<'a, T> {
         const AT_RANDOM: u64 = 25; // AT_RANDOM is a pointer to 16 bytes of randomness on the stack.
         auxv.write_u64_with_offset(0, AT_RANDOM)?;
         auxv.write_u64_with_offset(8, __stack_chk_guard.addr)?;
-        const  AT_PAGESZ: u64 = 6;
+        const AT_PAGESZ: u64 = 6;
         auxv.write_u64_with_offset(8 * 2, AT_PAGESZ)?;
         auxv.write_u64_with_offset(8 * 3, PAGE_ALIGN as u64)?;
 

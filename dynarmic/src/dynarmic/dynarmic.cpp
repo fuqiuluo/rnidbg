@@ -265,6 +265,7 @@ typedef struct dynarmic {
     khash_t(memory) *memory;
     size_t num_page_table_entries;
     void **page_table;
+    std::optional<uintptr_t> fastmem;
     DynarmicCallbacks64 *cb64;
     Dynarmic::A64::Jit *jit64;
     Dynarmic::ExclusiveMonitor *monitor;
@@ -368,7 +369,20 @@ FQL dynarmic* dynarmic_new(
         config.detect_misaligned_access_via_page_table = 16 | 32 | 64 | 128;
         config.only_detect_misalignment_via_page_table_on_page_boundary = true;
 
+#if defined(_WIN32) || defined(_WIN64)
         config.fastmem_pointer = std::nullopt;
+        backend->fastmem = std::nullopt;
+#else
+        void* ptr = mmap(nullptr, pow(2, PAGE_TABLE_ADDRESS_SPACE_BITS), PROT_READ | PROT_WRITE,
+                         MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
+        if (ptr != MAP_FAILED) {
+            config.fastmem_pointer = (uintptr_t) ptr;
+            config.fastmem_address_space_bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
+        } else {
+            config.fastmem_pointer = std::nullopt;
+        }
+        backend->fastmem = config.fastmem_pointer;
+#endif
         config.fastmem_address_space_bits = PAGE_TABLE_ADDRESS_SPACE_BITS;
         config.silently_mirror_fastmem = false;
 
@@ -392,6 +406,13 @@ FQL void dynarmic_destroy(dynarmic *dynarmic) {
         fprintf(stderr, "dynarmic_destroy failed[%s->%s:%d]: dynarmic is null\n", __FILE__, __func__, __LINE__);
         return;
     }
+    if (dynarmic->fastmem.has_value()) {
+        int ret = munmap((void *) dynarmic->fastmem.value(), pow(2, PAGE_TABLE_ADDRESS_SPACE_BITS));
+        if (ret != 0) {
+            fprintf(stderr, "munmap failed[%s->%s:%d]: ret=%d\n", __FILE__, __func__, __LINE__, ret);
+        }
+    }
+
     khash_t(memory) *memory = dynarmic->memory;
     for (auto k = kh_begin(memory); k < kh_end(memory); k++) {
         if(kh_exist(memory, k)) {
