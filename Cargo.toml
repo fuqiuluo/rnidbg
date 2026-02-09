@@ -24,7 +24,7 @@ byteorder = "1.5.0"
 hashbag = "0.1.12"
 bitflags = "2.6.0"
 indexmap = "2.3.0"
-rand = "0.9.0-alpha.2"
+rand = "0.10.0"
 generic-array = "1.1.0"
 once_cell = "1.19.0"
 
