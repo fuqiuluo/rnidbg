@@ -34,7 +34,7 @@ walkdir = "2.3"
 rustls = { version = "0.23.12", default-features = false, features = ["std", "tls12", "ring"] }
 # forbidden to use the default features: OpenSSL
 reqwest = { version = "0.12.7", features = ["blocking", "rustls-tls"], default-features = false }
-zip = "2.2.0"
+zip = "8.0.0"
 
 [profile.release]
 debug = false
